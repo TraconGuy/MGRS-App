@@ -1,0 +1,9 @@
+{
+  "name": "MGRS Distance & Azimuth",
+  "short_name": "MGRS Tool",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0b3d91",
+  "icons": []
+}

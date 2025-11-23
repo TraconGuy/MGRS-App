@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MGRS Distance & Azimuth</title>
+
+  <!-- PWA manifest -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="MGRS Tool">
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 600px;
+      margin: 1.5rem auto;
+      padding: 0 1rem;
+      line-height: 1.4;
+    }
+    h1 { font-size: 1.4rem; margin-bottom: 0.5rem; }
+    label { display: block; margin-top: 0.75rem; font-weight: 500; }
+    input[type="text"], input[type="number"] {
+      width: 100%;
+      padding: 0.4rem 0.5rem;
+      margin-top: 0.25rem;
+      box-sizing: border-box;
+    }
+    button {
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+    }
+    .results {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      background: #f8f8f8;
+      white-space: pre-line;
+    }
+    .error {
+      color: #b00020;
+      margin-top: 0.5rem;
+    }
+    small {
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <h1>MGRS Distance & Azimuth</h1>
+  <p>
+    Enter two 8-digit MGRS coordinates (same area), e.g.<br>
+    <code>33UXP12341234</code>
+  </p>
+
+  <label for="mgrsA">Point A (MGRS)</label>
+  <input id="mgrsA" type="text" placeholder="e.g. 33UXP12341234">
+
+  <label for="mgrsB">Point B (MGRS)</label>
+  <input id="mgrsB" type="text" placeholder="e.g. 33UXP22342234">
+
+  <label for="declination">
+    Declination (degrees)
+    <small>(+ = East, − = West; optional)</small>
+  </label>
+  <input id="declination" type="number" step="0.1" placeholder="e.g. 2.5 for 2.5°E, -3.0 for 3°W">
+
+  <button onclick="compute()">Compute distance & azimuth</button>
+
+  <div id="error" class="error"></div>
+  <div id="results" class="results"></div>
+
+  <!-- Local MGRS library (offline) -->
+  <script src="mgrs.min.js"></script>
+
+  <script>
+    // Register service worker for offline support
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => {
+          console.error('SW registration failed:', err);
+        });
+      });
+    }
+
+    function toRad(deg) {
+      return deg * Math.PI / 180;
+    }
+
+    function normalizeAngle(deg) {
+      deg = deg % 360;
+      if (deg < 0) deg += 360;
+      return deg;
+    }
+
+    function compute() {
+      const mgrsA = document.getElementById('mgrsA').value.trim();
+      const mgrsB = document.getElementById('mgrsB').value.trim();
+      const declStr = document.getElementById('declination').value.trim();
+      const errorEl = document.getElementById('error');
+      const resultsEl = document.getElementById('results');
+
+      errorEl.textContent = '';
+      resultsEl.textContent = '';
+
+      if (!mgrsA || !mgrsB) {
+        errorEl.textContent = 'Please enter both MGRS coordinates.';
+        return;
+      }
+
+      let decl = 0;
+      if (declStr !== '') {
+        const parsed = Number(declStr);
+        if (Number.isNaN(parsed)) {
+          errorEl.textContent = 'Declination must be a number (degrees).';
+          return;
+        }
+        decl = parsed; // +East, -West
+      }
+
+      try {
+        // mgrs.toPoint returns [lon, lat] in degrees
+        const [lonA, latA] = mgrs.toPoint(mgrsA);
+        const [lonB, latB] = mgrs.toPoint(mgrsB);
+
+        const R = 6371000; // Earth radius (meters)
+
+        const latA_rad = toRad(latA);
+        const latB_rad = toRad(latB);
+        const lonA_rad = toRad(lonA);
+        const lonB_rad = toRad(lonB);
+
+        const dLat = latB_rad - latA_rad;
+        const dLon = lonB_rad - lonA_rad;
+        const latAvg = (latA_rad + latB_rad) / 2;
+
+        const dNorth = dLat * R;
+        const dEast  = dLon * Math.cos(latAvg) * R;
+
+        const distance = Math.hypot(dEast, dNorth);
+
+        const azRad = Math.atan2(dEast, dNorth);
+        let gridAz = azRad * 180 / Math.PI;
+        gridAz = normalizeAngle(gridAz);
+
+        let magAz = normalizeAngle(gridAz + decl);
+
+        resultsEl.textContent =
+          'Point A (MGRS): ' + mgrsA + '\n' +
+          'Point B (MGRS): ' + mgrsB + '\n\n' +
+          'Distance:        ' + distance.toFixed(1) + ' m\n' +
+          'Grid azimuth:    ' + gridAz.toFixed(2) + '°\n' +
+          'Magnetic azimuth:' + magAz.toFixed(2) + '°' +
+          '   (decl ' + (decl >= 0 ? '+' : '') + decl.toFixed(2) + '°)';
+      } catch (e) {
+        console.error(e);
+        errorEl.textContent = 'Error parsing MGRS. Make sure the format is valid.';
+      }
+    }
+  </script>
+</body>
+</html>
